@@ -6,6 +6,7 @@
         <option name="rootFolder" value="C:\Users\Willard.Raymond\Documents\DevDir\guestbook" />
         <option name="sdkFolder" value="C:\Program Files (x86)\Google\google_appengine" />
         <option name="templatesFolder" value="" />
+        <option name="email" value="chuck.raymond@ppsi-beta.com" />
         <option name="oauth2" value="false" />
       </configuration>
     </facet>

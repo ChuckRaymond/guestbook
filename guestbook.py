@@ -17,59 +17,69 @@
 import cgi
 import datetime
 import webapp2
+import jinja2
+import os
+import urllib
+
 
 from google.appengine.ext import ndb
 from google.appengine.api import users
 
 guestbook_key = ndb.Key('Guestbook', 'default_guestbook')
 
-class Greeting(ndb.Model):
-  author = ndb.UserProperty()
-  content = ndb.TextProperty()
-  date = ndb.DateTimeProperty(auto_now_add=True)
+jinja_environment = jinja2.Environment(
+    loader=jinja2.FileSystemLoader(os.path.dirname(__file__)))
 
+
+class Greeting(ndb.Model):
+    author = ndb.UserProperty()
+    content = ndb.TextProperty()
+    date = ndb.DateTimeProperty(auto_now_add=True)
+    @classmethod
+    def query_book(cls, ancestor_key):
+        return cls.query(ancestor=ancestor_key).order(-cls.date)
 
 class MainPage(webapp2.RequestHandler):
-  def get(self):
-    self.response.out.write('<html><body>')
+    def get(self):
+        guestbook_name = self.request.get('guestbook_name')
+        # There is no need to actually create the parent Book entity; we can
+        # set it to be the parent of another entity without explicitly creating it
+        ancestor_key = ndb.Key("Book", guestbook_name or "*notitle*")
+        greetings = Greeting.query_book(ancestor_key).fetch(20)
 
-    greetings = ndb.gql('SELECT * '
-                        'FROM Greeting '
-                        'WHERE ANCESTOR IS :1 '
-                        'ORDER BY date DESC LIMIT 10',
-                        guestbook_key)
+        if users.get_current_user():
+            url = users.create_logout_url(self.request.uri)
+            url_linktext = 'Logout'
+        else:
+            url = users.create_login_url(self.request.uri)
+            url_linktext = 'Login'
 
-    for greeting in greetings:
-      if greeting.author:
-        self.response.out.write('<b>%s</b> wrote:' % greeting.author.nickname())
-      else:
-        self.response.out.write('An anonymous person wrote:')
-      self.response.out.write('<blockquote>%s</blockquote>' %
-                              cgi.escape(greeting.content))
-
-
-    self.response.out.write("""
-          <form action="/sign" method="post">
-            <div><textarea name="content" rows="3" cols="60"></textarea></div>
-            <div><input type="submit" value="Sign Guestbook"></div>
-          </form>
-        </body>
-      </html>""")
+        template_values = {
+            'greetings': greetings,
+            'url': url,
+            'url_linktext': url_linktext,
+            'guestbook_name': guestbook_name
+        }
+        template = jinja_environment.get_template('index.html')
+        self.response.out.write(template.render(template_values))
 
 
 class Guestbook(webapp2.RequestHandler):
-  def post(self):
-    greeting = Greeting(parent=guestbook_key)
-
-    if users.get_current_user():
-      greeting.author = users.get_current_user()
-
-    greeting.content = self.request.get('content')
-    greeting.put()
-    self.redirect('/')
-
+    def post(self):
+        # Set parent key on each greeting to ensure that each
+        # guestbook's greetings are in the same entity group.
+        guestbook_name = self.request.get('guestbook_name')
+        # There is no need to actually create the parent Book entity; we can
+        # set it to be the parent of another entity without explicitly creating it
+        greeting = Greeting(parent=ndb.Key("Book", guestbook_name or "*notitle*"),
+                        content = self.request.get('content'))
+        if users.get_current_user():
+            greeting.author = users.get_current_user()
+        greeting.put()
+        theURL = '/?' + urllib.urlencode({'guestbook_name': guestbook_name})
+        self.redirect(theURL)
 
 app = webapp2.WSGIApplication([
-  ('/', MainPage),
-  ('/sign', Guestbook)
-], debug=True)
+                                  ('/', MainPage),
+                                  ('/sign', Guestbook)
+                              ], debug=True)
